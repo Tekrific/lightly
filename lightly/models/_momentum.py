@@ -4,25 +4,26 @@
 # All Rights Reserved
 
 import copy
+from typing import Iterable, Tuple
 
 import torch
 import torch.nn as nn
+from torch import Tensor
+from torch.nn.parameter import Parameter
 
 
-def _deactivate_requires_grad(params):
-    """Deactivates the requires_grad flag for all parameters.
-
-    """
+def _deactivate_requires_grad(params: Iterable[Parameter]) -> None:
+    """Deactivates the requires_grad flag for all parameters."""
     for param in params:
         param.requires_grad = False
 
 
-def _do_momentum_update(prev_params, params, m):
-    """Updates the weights of the previous parameters.
-
-    """
+def _do_momentum_update(
+    prev_params: Iterable[Parameter], params: Iterable[Parameter], m: float
+) -> None:
+    """Updates the weights of the previous parameters."""
     for prev_param, param in zip(prev_params, params):
-        prev_param.data = prev_param.data * m + param.data * (1. - m)
+        prev_param.data = prev_param.data * m + param.data * (1.0 - m)
 
 
 class _MomentumEncoderMixin:
@@ -46,7 +47,7 @@ class _MomentumEncoderMixin:
     >>>         # initialize momentum_backbone and momentum_projection_head
     >>>         self._init_momentum_encoder()
     >>>
-    >>>     def forward(self, x: torch.Tensor):
+    >>>     def forward(self, x: Tensor):
     >>>
     >>>         # do the momentum update
     >>>         self._momentum_update(0.999)
@@ -63,24 +64,20 @@ class _MomentumEncoderMixin:
     momentum_backbone: nn.Module
     momentum_projection_head: nn.Module
 
-    def _init_momentum_encoder(self):
-        """Initializes momentum backbone and a momentum projection head.
-
-        """
+    def _init_momentum_encoder(self) -> None:
+        """Initializes momentum backbone and a momentum projection head."""
         assert self.backbone is not None
         assert self.projection_head is not None
 
         self.momentum_backbone = copy.deepcopy(self.backbone)
         self.momentum_projection_head = copy.deepcopy(self.projection_head)
-        
+
         _deactivate_requires_grad(self.momentum_backbone.parameters())
         _deactivate_requires_grad(self.momentum_projection_head.parameters())
 
     @torch.no_grad()
-    def _momentum_update(self, m: float = 0.999):
-        """Performs the momentum update for the backbone and projection head.
-
-        """
+    def _momentum_update(self, m: float = 0.999) -> None:
+        """Performs the momentum update for the backbone and projection head."""
         _do_momentum_update(
             self.momentum_backbone.parameters(),
             self.backbone.parameters(),
@@ -93,18 +90,14 @@ class _MomentumEncoderMixin:
         )
 
     @torch.no_grad()
-    def _batch_shuffle(self, batch: torch.Tensor):
-        """Returns the shuffled batch and the indices to undo.
-
-        """
+    def _batch_shuffle(self, batch: Tensor) -> Tuple[Tensor, Tensor]:
+        """Returns the shuffled batch and the indices to undo."""
         batch_size = batch.shape[0]
-        shuffle = torch.randperm(batch_size).to(batch.device)
+        shuffle = torch.randperm(batch_size, device=batch.device)
         return batch[shuffle], shuffle
 
     @torch.no_grad()
-    def _batch_unshuffle(self, batch: torch.Tensor, shuffle: torch.Tensor):
-        """Returns the unshuffled batch.
-
-        """
-        unshuffle = torch.argsort(shuffle).to(batch.device)
+    def _batch_unshuffle(self, batch: Tensor, shuffle: Tensor) -> Tensor:
+        """Returns the unshuffled batch."""
+        unshuffle = torch.argsort(shuffle)
         return batch[unshuffle]

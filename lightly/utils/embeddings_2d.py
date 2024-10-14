@@ -3,7 +3,14 @@
 # Copyright (c) 2020. Lightly AG and its affiliates.
 # All Rights Reserved
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Optional
+
 import numpy as np
+
+if TYPE_CHECKING:
+    from numpy.typing import NDArray
 
 
 class PCA(object):
@@ -18,11 +25,11 @@ class PCA(object):
 
     def __init__(self, n_components: int = 2, eps: float = 1e-10):
         self.n_components = n_components
-        self.mean = None
-        self.w = None
+        self.mean: Optional[NDArray[np.float32]] = None
+        self.w: Optional[NDArray[np.float32]] = None
         self.eps = eps
 
-    def fit(self, X: np.ndarray):
+    def fit(self, X: NDArray[np.float32]) -> PCA:
         """Fits PCA to data in X.
 
         Args:
@@ -35,6 +42,7 @@ class PCA(object):
         """
         X = X.astype(np.float32)
         self.mean = X.mean(axis=0)
+        assert self.mean is not None
         X = X - self.mean + self.eps
         cov = np.cov(X.T) / X.shape[0]
         v, w = np.linalg.eig(cov)
@@ -43,7 +51,7 @@ class PCA(object):
         self.w = w
         return self
 
-    def transform(self, X: np.ndarray):
+    def transform(self, X: NDArray[np.float32]) -> NDArray[np.float32]:
         """Uses PCA to transform data in X.
 
         Args:
@@ -53,13 +61,22 @@ class PCA(object):
         Returns:
             Numpy array of n x p datapoints where p <= d.
 
+        Raises:
+            ValueError: If PCA was not fitted before.
         """
+        if self.mean is None or self.w is None:
+            raise ValueError("PCA not fitted yet. Call fit() before transform().")
         X = X.astype(np.float32)
         X = X - self.mean + self.eps
-        return X.dot(self.w)[:, :self.n_components]
+        transformed: NDArray[np.float32] = X.dot(self.w)[:, : self.n_components]
+        return np.asarray(transformed)
 
 
-def fit_pca(embeddings: np.ndarray, n_components: int = 2, fraction: float = None):
+def fit_pca(
+    embeddings: NDArray[np.float32],
+    n_components: int = 2,
+    fraction: Optional[float] = None,
+) -> PCA:
     """Fits PCA to randomly selected subset of embeddings.
 
     For large datasets, it can be unfeasible to perform PCA on the whole data.
@@ -79,12 +96,12 @@ def fit_pca(embeddings: np.ndarray, n_components: int = 2, fraction: float = Non
         to lower dimensions.
 
     Raises:
-        ValueError if fraction < 0 or fraction > 1.
+        ValueError: If fraction < 0 or fraction > 1.
 
     """
     if fraction is not None:
-        if fraction < 0. or fraction > 1.:
-            msg = f'fraction must be in [0, 1] but was {fraction}.'
+        if fraction < 0.0 or fraction > 1.0:
+            msg = f"fraction must be in [0, 1] but was {fraction}."
             raise ValueError(msg)
 
     N = embeddings.shape[0]

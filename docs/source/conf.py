@@ -12,20 +12,24 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../..'))
+
+sys.path.insert(0, os.path.abspath("../.."))
 
 import sphinx_rtd_theme
 
+import lightly
 
 # -- Project information -----------------------------------------------------
 
-project = 'lightly'
-copyright = '2020, Lightly AG'
-author = 'Philipp Wirth, Igor Susmelj'
+project = "lightly"
+copyright_year = "2020-<script>document.write((new Date()).getFullYear())</script>"
+copyright = "Lightly AG"
+website_url = "https://www.lightly.ai/"
+author = "Lightly Team"
 
 # The full version, including alpha/beta/rc tags
-release = '1.0.0'
-master_doc = 'index'
+release = lightly.__version__
+master_doc = "index"
 
 
 # -- General configuration ---------------------------------------------------
@@ -34,16 +38,23 @@ master_doc = 'index'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    "sphinx.ext.napoleon",
     "sphinx_rtd_theme",
-   	#'sphinx.ext.napoleon',
-    'sphinx.ext.autosummary',
-    'sphinx_gallery.gen_gallery',
+    "sphinx.ext.autosummary",
+    "sphinx_gallery.gen_gallery",
+    "sphinx_tabs.tabs",
+    "sphinx_copybutton",
+    "sphinx_design",
+    "sphinx_reredirects",
 ]
 
 sphinx_gallery_conf = {
-     'examples_dirs': ['tutorials_source/package', 'tutorials_source/platform'],
-     'gallery_dirs': ['tutorials/package', 'tutorials/platform'],  # path to where to save gallery generated output
-     'filename_pattern': '/tutorial_',
+    "examples_dirs": ["tutorials_source/package", "tutorials_source/platform"],
+    "gallery_dirs": [
+        "tutorials/package",
+        "tutorials/platform",
+    ],  # path to where to save gallery generated output
+    "filename_pattern": "/tutorial_",
 }
 
 napoleon_google_docstring = True
@@ -60,7 +71,7 @@ napoleon_use_rtype = False
 napoleon_type_aliases = None
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = ["_templates"]
 
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
@@ -73,19 +84,24 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'sphinx_rtd_theme'
+html_theme = "sphinx_rtd_theme"
 
 html_theme_options = {
-    'collapse_navigation': False, # set to false to prevent menu item collapse
+    "collapse_navigation": False,  # set to false to prevent menu item collapse
+    "logo_only": True,
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = ["_static"]
 
-html_favicon = 'favicon.png'
+html_favicon = "favicon.png"
 
-#html_logo = "../logos/lightly_logo_crop.png"
-def setup(app):
-    app.add_css_file('css/my-styles.css')
+html_logo = "../logos/lightly_SSL_logo_crop_white_text.png"
+
+# Exposes variables so that they can be used by django
+html_context = {
+    "copyright_year": copyright_year,
+    "website_url": website_url,
+}

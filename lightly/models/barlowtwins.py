@@ -5,54 +5,13 @@
 # Copyright (c) 2020. Lightly AG and its affiliates.
 # All Rights Reserved
 
+import warnings
+
 import torch
 import torch.nn as nn
-from . import ResNetGenerator
-# from . since it is imported in __init__ : '.'=lightly.models.resnet
 
-def _projection_head_barlow(in_dims: int,
-                    h_dims: int = 8192,
-                    out_dims: int = 8192,
-                    num_layers: int = 3) -> nn.Sequential:
-    """
-    Projection MLP. The original paper's implementation [0] has 3 layers, with
-    8192 output units each layer. BN and ReLU applied to first and second layer.
+from lightly.models.modules import BarlowTwinsProjectionHead
 
-    Args:
-        in_dims:
-            Input dimension of the first linear layer.
-        h_dims:
-            Hidden dimension of all the fully connected layers.
-            8192 on [0].
-        out_dims:
-            Output Dimension of the final linear layer.
-            Dimension of the latent space. 8192 on [0].
-        num_layers:
-            Controls the number of layers; must be 2 or 3. Defaults to 3.
-
-    Returns:
-        nn.Sequential:
-            The projection head.
-    """
-    l1 = nn.Sequential(nn.Linear(in_dims, h_dims),
-                       nn.BatchNorm1d(h_dims),
-                       nn.ReLU(inplace=True))
-
-    l2 = nn.Sequential(nn.Linear(h_dims, h_dims),
-                       nn.BatchNorm1d(h_dims),
-                       nn.ReLU(inplace=True))
-
-    l3 = nn.Sequential(nn.Linear(h_dims, out_dims))
-    #SimSiam and BarlowTwins only differs in one BN layer
-
-    if num_layers == 3:
-        projection = nn.Sequential(l1, l2, l3)
-    elif num_layers == 2:
-        projection = nn.Sequential(l1, l3)
-    else:
-        raise NotImplementedError("Only MLPs with 2 and 3 layers are implemented.")
-
-    return projection
 
 class BarlowTwins(nn.Module):
     """Implementation of BarlowTwins[0] network.
@@ -76,13 +35,13 @@ class BarlowTwins(nn.Module):
 
     """
 
-    def __init__(self,
-                 backbone: nn.Module,
-                 num_ftrs: int = 2048,
-                 proj_hidden_dim: int = 8192,
-                 out_dim: int = 8192,
-                 num_mlp_layers: int = 3):
-
+    def __init__(
+        self,
+        backbone: nn.Module,
+        num_ftrs: int = 2048,
+        proj_hidden_dim: int = 8192,
+        out_dim: int = 8192,
+    ):
         super(BarlowTwins, self).__init__()
 
         self.backbone = backbone
@@ -90,14 +49,22 @@ class BarlowTwins(nn.Module):
         self.proj_hidden_dim = proj_hidden_dim
         self.out_dim = out_dim
 
-        self.projection_mlp = \
-            _projection_head_barlow(num_ftrs, proj_hidden_dim, out_dim, num_mlp_layers)
+        self.projection_mlp = BarlowTwinsProjectionHead(
+            num_ftrs, proj_hidden_dim, out_dim
+        )
 
-    def forward(self,
-                x0: torch.Tensor,
-                x1: torch.Tensor = None,
-                return_features: bool = False):
+        warnings.warn(
+            Warning(
+                "The high-level building block BarlowTwins will be deprecated in version 1.3.0. "
+                + "Use low-level building blocks instead. "
+                + "See https://docs.lightly.ai/self-supervised-learning/lightly.models.html for more information"
+            ),
+            DeprecationWarning,
+        )
 
+    def forward(
+        self, x0: torch.Tensor, x1: torch.Tensor = None, return_features: bool = False
+    ):
         """Forward pass through BarlowTwins.
 
         Extracts features with the backbone and applies the projection
@@ -134,7 +101,7 @@ class BarlowTwins(nn.Module):
             >>> (out0, f0), (out1, f1) = model(x0, x1, return_features=True)
         """
         # forward pass first input
-        f0 = self.backbone(x0).squeeze()
+        f0 = self.backbone(x0).flatten(start_dim=1)
         out0 = self.projection_mlp(f0)
 
         # append features if requested
@@ -145,7 +112,7 @@ class BarlowTwins(nn.Module):
             return out0
 
         # forward pass second input
-        f1 = self.backbone(x1).squeeze()
+        f1 = self.backbone(x1).flatten(start_dim=1)
         out1 = self.projection_mlp(f1)
 
         # append features if requested

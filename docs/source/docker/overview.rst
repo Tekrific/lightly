@@ -1,5 +1,5 @@
-Docker
-===================================
+Lightly Worker
+==============
 
 We all know that sometimes when working with ML data we deal with really BIG datasets. The cloud solution is great for exploration, prototyping
 and an easy way to work with lightly. But there is more!
@@ -9,18 +9,20 @@ and an easy way to work with lightly. But there is more!
     :alt: Alt text
     :figclass: align-center
 
-With the introduction of our on-premise solution, you can process larger datasets completely on your end without data leaving your infrastructure.
+With the introduction of our on-premise solution, you can **process larger datasets completely on your end without data leaving your infrastructure**.
 We worked hard to make this happen and are very proud to present you with the following specs:
 
-* **NEW** See your docker runs live in the Lightly Platform (see :ref:`ref-docker-runs` )
+* :ref:`docker-active-learning` using Lightly Worker
 
-* **NEW** Lightly Docker has built-in pretagging models (see :ref:`ref-docker-pretagging` )
+* See your docker runs live in the Lightly Platform (see :ref:`ref-docker-runs`)
+
+* Lightly Worker has built-in pretagging models (see :ref:`docker-pretagging`)
 
   * Use this feature to pre-label your dataset or to only select images which contain certain objects
 
   * Supported object categories are: bicycle, bus, car, motorcycle, person, train, truck
 
-* Sample more than 1 Million samples within a few hours!
+* Select from more than 10 Million samples within a few hours!
 
 * Runs directly with videos without prior extraction of the frames!
 
@@ -28,16 +30,16 @@ We worked hard to make this happen and are very proud to present you with the fo
 
 * Configurable
 
-  * Use stopping conditions for sampling such as minimum distance between
+  * Use stopping conditions for the selection strategy such as minimum distance between
     two samples
 
-  * Use various sampling methods
+  * Use various selection strategies
 
   * Check for corrupt files and report them
 
   * Check for exact duplicates and report them
 
-  * We expose the full lightly framework config
+  * We expose the full Lightly\ **SSL** OSS framework config
 
 * Automated reporting of the datasets for each run
 
@@ -57,19 +59,18 @@ We worked hard to make this happen and are very proud to present you with the fo
 
 * Recommended hardware:
   
-  * 8 CPU cores or more
-
-  * 16GB free RAM
- 
-  * 1 Nvidia Tesla P100 or V100 GPU with CUDA 10.0+
+  * see :ref:`hardware-recommendations`
 
 .. toctree::
    :maxdepth: 1
 
    getting_started/setup.rst
    getting_started/first_steps.rst
+   getting_started/selection.rst
    advanced/overview.rst
+   integration/overview.rst
    configuration/configuration.rst
    examples/overview.rst
+   security/security.rst
    known_issues_faq.rst
-
+   getting_started/hardware_recommendations.rst

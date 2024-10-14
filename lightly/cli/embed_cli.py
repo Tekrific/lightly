@@ -9,32 +9,38 @@ command-line interface.
 # All Rights Reserved
 
 import os
+from typing import List, Tuple, Union
 
 import hydra
+import numpy as np
 import torch
-import torch.nn as nn
 import torchvision
 
+from lightly.cli._helpers import (
+    cpu_count,
+    fix_hydra_arguments,
+    fix_input_path,
+    get_model_from_config,
+)
 from lightly.data import LightlyDataset
-from lightly.embedding import SelfSupervisedEmbedding
-from lightly.models import SimCLR
-
-from lightly.models import ResNetGenerator
-from lightly.models.batchnorm import get_norm_layer
-
-from lightly.utils import save_embeddings
-
-from lightly.cli._helpers import get_ptmodel_from_config
-from lightly.cli._helpers import fix_input_path
-from lightly.cli._helpers import load_state_dict_from_url
-from lightly.cli._helpers import load_from_state_dict
+from lightly.utils.hipify import bcolors
+from lightly.utils.io import save_embeddings
 
 
-def _embed_cli(cfg, is_cli_call=True):
+def _embed_cli(
+    cfg, is_cli_call=True
+) -> Union[Tuple[np.ndarray, List[int], List[str]], str]:
+    """See embed_cli() for usage documentation
 
-    checkpoint = cfg['checkpoint']
-
-    input_dir = cfg['input_dir']
+    is_cli_call:
+        If True:
+            Saves the embeddings as file and returns the filepath.
+        If False:
+            Returns the embeddings, labels, filenames as tuple.
+            Embeddings are of shape (n_samples, embedding_size)
+            len(labels) = len(filenames) = n_samples
+    """
+    input_dir = cfg["input_dir"]
     if input_dir and is_cli_call:
         input_dir = fix_input_path(input_dir)
 
@@ -42,93 +48,70 @@ def _embed_cli(cfg, is_cli_call=True):
     torch.backends.cudnn.benchmark = False
 
     if torch.cuda.is_available():
-        device = torch.device('cuda')
+        device = torch.device("cuda")
     else:
-        device = torch.device('cpu')
+        device = torch.device("cpu")
 
-    transform = torchvision.transforms.Compose([
-        torchvision.transforms.Resize((cfg['collate']['input_size'],
-                                       cfg['collate']['input_size'])),
-        torchvision.transforms.ToTensor(),
-        torchvision.transforms.Normalize(
-            mean=[0.485, 0.456, 0.406],
-            std=[0.229, 0.224, 0.225])
-    ])
+    transform = torchvision.transforms.Compose(
+        [
+            torchvision.transforms.Resize(
+                (cfg["collate"]["input_size"], cfg["collate"]["input_size"])
+            ),
+            torchvision.transforms.ToTensor(),
+            torchvision.transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
+            ),
+        ]
+    )
 
     dataset = LightlyDataset(input_dir, transform=transform)
 
-    cfg['loader']['drop_last'] = False
-    cfg['loader']['shuffle'] = False
-    cfg['loader']['batch_size'] = min(
-        cfg['loader']['batch_size'],
-        len(dataset)
-    )
-    dataloader = torch.utils.data.DataLoader(dataset, **cfg['loader'])
+    # disable drop_last and shuffle
+    cfg["loader"]["drop_last"] = False
+    cfg["loader"]["shuffle"] = False
+    cfg["loader"]["batch_size"] = min(cfg["loader"]["batch_size"], len(dataset))
 
-    # load the PyTorch state dictionary and map it to the current device    
-    state_dict = None
-    if not checkpoint:
-        checkpoint, key = get_ptmodel_from_config(cfg['model'])
-        if not checkpoint:
-            msg = 'Cannot download checkpoint for key {} '.format(key)
-            msg += 'because it does not exist!'
-            raise RuntimeError(msg)
-        state_dict = load_state_dict_from_url(
-            checkpoint, map_location=device
-        )['state_dict']
-    else:
-        checkpoint = fix_input_path(checkpoint) if is_cli_call else checkpoint
-        state_dict = torch.load(
-            checkpoint, map_location=device
-        )['state_dict']
+    # determine the number of available cores
+    if cfg["loader"]["num_workers"] < 0:
+        cfg["loader"]["num_workers"] = cpu_count()
 
-    # load model
-    resnet = ResNetGenerator(cfg['model']['name'], cfg['model']['width'])
-    last_conv_channels = list(resnet.children())[-1].in_features
-    features = nn.Sequential(
-        get_norm_layer(3, 0),
-        *list(resnet.children())[:-1],
-        nn.Conv2d(last_conv_channels, cfg['model']['num_ftrs'], 1),
-        nn.AdaptiveAvgPool2d(1),
-    )
+    dataloader = torch.utils.data.DataLoader(dataset, **cfg["loader"])
 
-    model = SimCLR(
-        features,
-        num_ftrs=cfg['model']['num_ftrs'],
-        out_dim=cfg['model']['out_dim']
-    ).to(device)
+    encoder = get_model_from_config(cfg, is_cli_call)
 
-    if state_dict is not None:
-        load_from_state_dict(model, state_dict)
-
-    encoder = SelfSupervisedEmbedding(model, None, None, None)
     embeddings, labels, filenames = encoder.embed(dataloader, device=device)
 
     if is_cli_call:
-        path = os.path.join(os.getcwd(), 'embeddings.csv')
+        path = os.path.join(os.getcwd(), "embeddings.csv")
         save_embeddings(path, embeddings, labels, filenames)
-        print('Embeddings are stored at %s' % (path))
+        print(f"Embeddings are stored at {bcolors.OKBLUE}{path}{bcolors.ENDC}")
+        os.environ[
+            cfg["environment_variable_names"]["lightly_last_embedding_path"]
+        ] = path
         return path
 
     return embeddings, labels, filenames
 
 
-@hydra.main(config_path='config', config_name='config')
-def embed_cli(cfg):
+@hydra.main(**fix_hydra_arguments(config_path="config", config_name="config"))
+def embed_cli(cfg) -> str:
     """Embed images from the command-line.
 
     Args:
         cfg:
             The default configs are loaded from the config file.
-            To overwrite them please see the section on the config file 
+            To overwrite them please see the section on the config file
             (.config.config.yaml).
-    
+
     Command-Line Args:
         input_dir:
             Path to the input directory where images are stored.
         checkpoint:
             Path to the checkpoint of a pretrained model. If left
             empty, a pretrained model by lightly is used.
+
+    Returns:
+        The path to the created embeddings file.
 
     Examples:
         >>> # embed images with default settings and a lightly model

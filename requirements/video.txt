@@ -1,2 +1,0 @@
-torchvision>=0.8.0
-av>=8.0.2

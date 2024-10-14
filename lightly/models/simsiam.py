@@ -3,85 +3,12 @@
 # Copyright (c) 2020. Lightly AG and its affiliates.
 # All Rights Reserved
 
+import warnings
+
 import torch
 import torch.nn as nn
 
-
-def _prediction_mlp(in_dims: int, 
-                    h_dims: int, 
-                    out_dims: int) -> nn.Sequential:
-    """Prediction MLP. The original paper's implementation has 2 layers, with 
-    BN applied to its hidden fc layers but no BN or ReLU on the output fc layer.
-
-    Note that the hidden dimensions should be smaller than the input/output 
-    dimensions (bottleneck structure). The default implementation using a 
-    ResNet50 backbone has an input dimension of 2048, hidden dimension of 512, 
-    and output dimension of 2048
-
-    Args:
-        in_dims:
-            Input dimension of the first linear layer.
-        h_dims: 
-            Hidden dimension of all the fully connected layers (should be a
-            bottleneck!)
-        out_dims: 
-            Output Dimension of the final linear layer.
-
-    Returns:
-        nn.Sequential:
-            The projection head.
-    """
-    l1 = nn.Sequential(nn.Linear(in_dims, h_dims),
-                       nn.BatchNorm1d(h_dims),
-                       nn.ReLU(inplace=True))
-
-    l2 = nn.Linear(h_dims, out_dims)
-
-    prediction = nn.Sequential(l1, l2)
-    return prediction
-
-
-def _projection_mlp(in_dims: int,
-                    h_dims: int,
-                    out_dims: int,
-                    num_layers: int = 3) -> nn.Sequential:
-    """Projection MLP. The original paper's implementation has 3 layers, with 
-    BN applied to its hidden fc layers but no ReLU on the output fc layer. 
-    The CIFAR-10 study used a MLP with only two layers.
-
-    Args:
-        in_dims:
-            Input dimension of the first linear layer.
-        h_dims: 
-            Hidden dimension of all the fully connected layers.
-        out_dims: 
-            Output Dimension of the final linear layer.
-        num_layers:
-            Controls the number of layers; must be 2 or 3. Defaults to 3.
-
-    Returns:
-        nn.Sequential:
-            The projection head.
-    """
-    l1 = nn.Sequential(nn.Linear(in_dims, h_dims),
-                       nn.BatchNorm1d(h_dims),
-                       nn.ReLU(inplace=True))
-
-    l2 = nn.Sequential(nn.Linear(h_dims, h_dims),
-                       nn.BatchNorm1d(h_dims),
-                       nn.ReLU(inplace=True))
-
-    l3 = nn.Sequential(nn.Linear(h_dims, out_dims),
-                       nn.BatchNorm1d(out_dims))
-
-    if num_layers == 3:
-        projection = nn.Sequential(l1, l2, l3)
-    elif num_layers == 2:
-        projection = nn.Sequential(l1, l3)
-    else:
-        raise NotImplementedError("Only MLPs with 2 and 3 layers are implemented.")
-
-    return projection
+from lightly.models.modules import SimSiamPredictionHead, SimSiamProjectionHead
 
 
 class SimSiam(nn.Module):
@@ -107,14 +34,14 @@ class SimSiam(nn.Module):
 
     """
 
-    def __init__(self,
-                 backbone: nn.Module,
-                 num_ftrs: int = 2048,
-                 proj_hidden_dim: int = 2048,
-                 pred_hidden_dim: int = 512,
-                 out_dim: int = 2048,
-                 num_mlp_layers: int = 3):
-
+    def __init__(
+        self,
+        backbone: nn.Module,
+        num_ftrs: int = 2048,
+        proj_hidden_dim: int = 2048,
+        pred_hidden_dim: int = 512,
+        out_dim: int = 2048,
+    ):
         super(SimSiam, self).__init__()
 
         self.backbone = backbone
@@ -123,16 +50,30 @@ class SimSiam(nn.Module):
         self.pred_hidden_dim = pred_hidden_dim
         self.out_dim = out_dim
 
-        self.projection_mlp = \
-            _projection_mlp(num_ftrs, proj_hidden_dim, out_dim, num_mlp_layers)
+        self.projection_mlp = SimSiamProjectionHead(
+            num_ftrs,
+            proj_hidden_dim,
+            out_dim,
+        )
 
-        self.prediction_mlp = \
-            _prediction_mlp(out_dim, pred_hidden_dim, out_dim)
-        
-    def forward(self, 
-                x0: torch.Tensor, 
-                x1: torch.Tensor = None,
-                return_features: bool = False):
+        self.prediction_mlp = SimSiamPredictionHead(
+            out_dim,
+            pred_hidden_dim,
+            out_dim,
+        )
+
+        warnings.warn(
+            Warning(
+                "The high-level building block SimSiam will be deprecated in version 1.3.0. "
+                + "Use low-level building blocks instead. "
+                + "See https://docs.lightly.ai/self-supervised-learning/lightly.models.html for more information"
+            ),
+            DeprecationWarning,
+        )
+
+    def forward(
+        self, x0: torch.Tensor, x1: torch.Tensor = None, return_features: bool = False
+    ):
         """Forward pass through SimSiam.
 
         Extracts features with the backbone and applies the projection
@@ -153,11 +94,11 @@ class SimSiam(nn.Module):
             the output prediction and projection of x1. If return_features is
             True, the output for each x is a tuple (out, f) where f are the
             features before the projection head.
-            
+
         Examples:
             >>> # single input, single output
-            >>> out = model(x) 
-            >>> 
+            >>> out = model(x)
+            >>>
             >>> # single input with return_features=True
             >>> out, f = model(x, return_features=True)
             >>>
@@ -167,7 +108,7 @@ class SimSiam(nn.Module):
             >>> # two inputs, two outputs with return_features=True
             >>> (out0, f0), (out1, f1) = model(x0, x1, return_features=True)
         """
-        f0 = self.backbone(x0).squeeze()
+        f0 = self.backbone(x0).flatten(start_dim=1)
         z0 = self.projection_mlp(f0)
         p0 = self.prediction_mlp(z0)
 
@@ -179,8 +120,8 @@ class SimSiam(nn.Module):
 
         if x1 is None:
             return out0
-        
-        f1 = self.backbone(x1).squeeze()
+
+        f1 = self.backbone(x1).flatten(start_dim=1)
         z1 = self.projection_mlp(f1)
         p1 = self.prediction_mlp(z1)
 

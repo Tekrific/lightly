@@ -18,11 +18,6 @@ lightly.cli
 .. automodule:: lightly.cli.embed_cli
    :members:
 
-.upload_cli
----------------
-.. automodule:: lightly.cli.upload_cli
-   :members:
-
 .download_cli
 ---------------
 .. automodule:: lightly.cli.download_cli
@@ -32,10 +27,15 @@ lightly.cli
 -------------
 .. automodule:: lightly.cli.version_cli
 
+.crop_cli
+---------------
+.. automodule:: lightly.cli.crop_cli
+   :members:
+
 .config.config.yaml
 -------------------
 
-The default settings for all command line tools in the lightly Python package are stored in a YAML config file.
+The default settings for all command line tools in the Lightly\ **SSL** Python package are stored in a YAML config file.
 The config file is distributed along with the Python package and can be adapted to fit custom requirements.
 
 The arguments are grouped into namespaces. For example, everything related to the embedding model is grouped under

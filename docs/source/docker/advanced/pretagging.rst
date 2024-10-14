@@ -1,9 +1,9 @@
-.. _ref-docker-pretagging:
+.. _docker-pretagging:
 
 Pretagging
 ======================
 
-Lightly Docker supports the use of pre-trained models to tag the dataset. We 
+Lightly Worker supports the use of pre-trained models to tag the dataset. We 
 call this pretagging. For now, we offer a pre-trained model for object detection 
 optimized for autonomous-driving.
 
@@ -42,7 +42,7 @@ before filtering.
     The plot shows the distribution of the various detected classes. 
     Further it shows the average number of objects per image.
 
-For every docker run with pretagging enabled we also dump all model predictions
+For every Lightly Worker run with pretagging enabled we also dump all model predictions
 into a json file with the following format:
 
 .. code-block:: javascript
@@ -81,30 +81,30 @@ into a json file with the following format:
 Usage
 ---------------
 
-Pretagging can be activated by passing the following argument to your docker
-run command: `pretagging=True`
+Pretagging can be activated by passing the following argument to your
+Lightly Worker config: :code:`'pretagging': True`
 
-- `pretagging=True` enables the use of the pretagging model
-- `pretagging_debug=True` add a few images to the report for debugging showing
-  showing the image with the bounding box predictions. 
+- :code:`'pretagging': True` enables the use of the pretagging model
+- :code:`'pretagging_debug': True` add a few images to the report for debugging showing the image with the bounding box predictions.
 
-  .. note:: The debug mode for pretagging is currently not available for video
-            datasets.
-  
 
-The final docker run command to enable pretagging as well as pretagging_debug
-should look like this:
+A full Python script showing how to create such as job is shown here:
+
+.. literalinclude:: ./code_examples/python_run_pretagging.py
+  :linenos:
+  :emphasize-lines: 75-76
+  :language: python
+
+
+After running the Python script to create the job we need to make sure we have
+a running Lightly Worker to process the job. We can use the following
+code to sping up a Lightly Worker
 
 .. code-block:: console
 
-   docker run --gpus all --rm -it \
-      -v OTHER_INPUT_DIR:/home/input_dir:ro \
-      -v SHARED_DIR:/home/shared_dir \
-      -v OUTPUT_DIR:/home/output_dir \
-      lightly/sampling:latest \
-      token=MYAWESOMETOKEN \
-      pretagging=True \
-      pretagging_debug=True
+  docker run --shm-size="1024m" --rm --gpus all -it \
+    lightly/worker:latest \
+    token=YOUR_TOKEN  worker.worker_id=YOUR_WORKER_ID
 
 The following shows an example of how the debugging images in the report look like:
 
@@ -115,27 +115,3 @@ The following shows an example of how the debugging images in the report look li
     The plot shows the detected bounding boxes from the pretagging overlayed
     on the image. Use the debug feature to figure out whether the pretagging 
     mechanism works properly on your dataset.
-
-
-Pretagging for Selection
-^^^^^^^^^^^^^^^^^^^^^^^^
-
-You can also use pretagging to guide the data selection process. This can be
-helpful if you for example only care about images where there is at least one
-person.
-
-To create such a pretagging selection mechanism you need to create a config file.
-
-For the example of selecting only images with >=1 person we can create
-a `min_requirements.json` file:
-
-.. code-block:: json
-
-    {
-        "person": 1
-    }
-
-Move this file to the shared directory (to make it accessible to the docker
-container).
-Finally, run the docker with `pretagging=True`
-and `pretagging_config=min_requirements.json`.

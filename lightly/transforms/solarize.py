@@ -1,10 +1,9 @@
-""" Solarization """
-
 # Copyright (c) 2021. Lightly AG and its affiliates.
 # All Rights Reserved
 
 import numpy as np
 from PIL import ImageOps
+from PIL.Image import Image as PILImage
 
 
 class RandomSolarization(object):
@@ -20,12 +19,11 @@ class RandomSolarization(object):
             Threshold for solarization.
     """
 
-    def __init__(self, prob: float = 0.5,
-                 threshold: int = 128):
+    def __init__(self, prob: float = 0.5, threshold: int = 128):
         self.prob = prob
         self.threshold = threshold
 
-    def __call__(self, sample):
+    def __call__(self, sample: PILImage) -> PILImage:
         """Solarizes the given input image
 
         Args:

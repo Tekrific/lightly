@@ -3,31 +3,19 @@
 # Copyright (c) 2020. Lightly AG and its affiliates.
 # All Rights Reserved
 
+import warnings
+
 import torch
 import torch.nn as nn
 
 from lightly.models._momentum import _MomentumEncoderMixin
-
-
-def _get_moco_projection_head(num_ftrs: int, out_dim: int):
-    """Returns a 2-layer projection head.
-
-    Reference (07.12.2020):
-    https://github.com/facebookresearch/moco/blob/master/moco/builder.py
-
-    """
-    modules = [
-        nn.Linear(num_ftrs, num_ftrs),
-        nn.ReLU(),
-        nn.Linear(num_ftrs, out_dim)
-    ]
-    return nn.Sequential(*modules)
+from lightly.models.modules import MoCoProjectionHead
 
 
 class MoCo(nn.Module, _MomentumEncoderMixin):
     """Implementation of the MoCo (Momentum Contrast)[0] architecture.
 
-    Recommended loss: :py:class:`lightly.loss.ntx_ent_loss.NTXentLoss` with 
+    Recommended loss: :py:class:`lightly.loss.ntx_ent_loss.NTXentLoss` with
     a memory bank.
 
     [0] MoCo, 2020, https://arxiv.org/abs/1911.05722
@@ -44,17 +32,18 @@ class MoCo(nn.Module, _MomentumEncoderMixin):
 
     """
 
-    def __init__(self,
-                 backbone: nn.Module,
-                 num_ftrs: int = 32,
-                 out_dim: int = 128,
-                 m: float = 0.999,
-                 batch_shuffle: bool = False):
-
+    def __init__(
+        self,
+        backbone: nn.Module,
+        num_ftrs: int = 32,
+        out_dim: int = 128,
+        m: float = 0.999,
+        batch_shuffle: bool = False,
+    ):
         super(MoCo, self).__init__()
 
         self.backbone = backbone
-        self.projection_head = _get_moco_projection_head(num_ftrs, out_dim)
+        self.projection_head = MoCoProjectionHead(num_ftrs, num_ftrs, out_dim)
         self.momentum_features = None
         self.momentum_projection_head = None
 
@@ -64,13 +53,21 @@ class MoCo(nn.Module, _MomentumEncoderMixin):
         # initialize momentum features and momentum projection head
         self._init_momentum_encoder()
 
-    def forward(self,
-                x0: torch.Tensor,
-                x1: torch.Tensor = None,
-                return_features: bool = False):
+        warnings.warn(
+            Warning(
+                "The high-level building block MoCo will be deprecated in version 1.3.0. "
+                + "Use low-level building blocks instead. "
+                + "See https://docs.lightly.ai/self-supervised-learning/lightly.models.html for more information"
+            ),
+            DeprecationWarning,
+        )
+
+    def forward(
+        self, x0: torch.Tensor, x1: torch.Tensor = None, return_features: bool = False
+    ):
         """Embeds and projects the input image.
 
-        Performs the momentum update, extracts features with the backbone and 
+        Performs the momentum update, extracts features with the backbone and
         applies the projection head to the output space. If both x0 and x1 are
         not None, both will be passed through the backbone and projection head.
         If x1 is None, only x0 will be forwarded.
@@ -91,8 +88,8 @@ class MoCo(nn.Module, _MomentumEncoderMixin):
 
         Examples:
             >>> # single input, single output
-            >>> out = model(x) 
-            >>> 
+            >>> out = model(x)
+            >>>
             >>> # single input with return_features=True
             >>> out, f = model(x, return_features=True)
             >>>
@@ -104,9 +101,9 @@ class MoCo(nn.Module, _MomentumEncoderMixin):
 
         """
         self._momentum_update(self.m)
-        
+
         # forward pass of first input x0
-        f0 = self.backbone(x0).squeeze()
+        f0 = self.backbone(x0).flatten(start_dim=1)
         out0 = self.projection_head(f0)
 
         # append features if requested
@@ -119,15 +116,14 @@ class MoCo(nn.Module, _MomentumEncoderMixin):
 
         # forward pass of second input x1
         with torch.no_grad():
-
             # shuffle for batchnorm
             if self.batch_shuffle:
                 x1, shuffle = self._batch_shuffle(x1)
 
             # run x1 through momentum encoder
-            f1 = self.momentum_backbone(x1).squeeze()
+            f1 = self.momentum_backbone(x1).flatten(start_dim=1)
             out1 = self.momentum_projection_head(f1).detach()
-        
+
             # unshuffle for batchnorm
             if self.batch_shuffle:
                 f1 = self._batch_unshuffle(f1, shuffle)

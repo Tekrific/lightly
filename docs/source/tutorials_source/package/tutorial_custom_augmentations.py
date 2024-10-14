@@ -28,48 +28,61 @@ on most Linux systems.
 
 """
 
+
 # %%
 # Imports
 # -------
 #
 # Import the Python frameworks we need for this tutorial.
+import copy
 import os
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torchvision
-import pytorch_lightning as pl
-import lightly
-import matplotlib.pyplot as plt
+from PIL import Image
 from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import normalize
-from PIL import Image
-import numpy as np
-import pandas
+
+from lightly.data import LightlyDataset
+from lightly.loss import NTXentLoss
+from lightly.models.modules.heads import MoCoProjectionHead
+from lightly.models.utils import (
+    batch_shuffle,
+    batch_unshuffle,
+    deactivate_requires_grad,
+    update_momentum,
+)
+from lightly.transforms.multi_view_transform import MultiViewTransform
 
 # %%
 # Configuration
 # -------------
 # Let's set the configuration parameters for our experiments.
-# 
+#
 # We will use eight workers to fetch the data from disc and a batch size of 128.
 # The input size of the images is set to 128. With these settings, the training
-# requires 16GB of GPU memory.
+# requires 2.5GB of GPU memory.
 
 num_workers = 8
 batch_size = 128
 input_size = 128
 seed = 1
-max_epochs = 100
+max_epochs = 50
 
 # %%
-# Let's set the seed for our experiments
+# Let's set the seed for our experiments.
+
 pl.seed_everything(seed)
 
 # %%
-# Set the path to our dataset
+# Set the path to our dataset.
 
-path_to_data = '/datasets/vinbigdata/train_small'
-
+path_to_data = "/datasets/vinbigdata/train_small"
 
 # %%
 # Setup custom data augmentations
@@ -83,6 +96,7 @@ path_to_data = '/datasets/vinbigdata/train_small'
 # Let's write an augmentation, which takes as input a numpy array with 16-bit input
 # depth and returns a histogram normalized 8-bit PIL image.
 
+
 class HistogramNormalize:
     """Performs histogram normalization on numpy array and returns 8-bit image.
 
@@ -95,22 +109,23 @@ class HistogramNormalize:
         self.number_bins = number_bins
 
     def __call__(self, image: np.array) -> Image:
-
-        # get image histogram
+        # Get the image histogram.
         image_histogram, bins = np.histogram(
             image.flatten(), self.number_bins, density=True
         )
         cdf = image_histogram.cumsum()  # cumulative distribution function
         cdf = 255 * cdf / cdf[-1]  # normalize
 
-        # use linear interpolation of cdf to find new pixel values
+        # Use linear interpolation of cdf to find new pixel values.
         image_equalized = np.interp(image.flatten(), bins[:-1], cdf)
         return Image.fromarray(image_equalized.reshape(image.shape))
+
 
 # %%
 # Since we can't use color jitter on X-ray images, let's replace it and add some
 # Gaussian noise instead. It's easiest to apply this after the image has been
 # converted to a PyTorch tensor.
+
 
 class GaussianNoise:
     """Applies random Gaussian noise to a tensor.
@@ -140,38 +155,41 @@ class GaussianNoise:
 # a three color channel input. This step can be skipped if a different backbone network
 # is used.
 
+# Compose the custom augmentations with available augmentations.
+view_transform = torchvision.transforms.Compose(
+    [
+        HistogramNormalize(),
+        torchvision.transforms.Grayscale(num_output_channels=3),
+        torchvision.transforms.RandomResizedCrop(size=input_size, scale=(0.2, 1.0)),
+        torchvision.transforms.RandomHorizontalFlip(p=0.5),
+        torchvision.transforms.RandomVerticalFlip(p=0.5),
+        torchvision.transforms.GaussianBlur(21),
+        torchvision.transforms.ToTensor(),
+        GaussianNoise(),
+    ]
+)
 
-# compose the custom augmentations with available augmentations
-transform = torchvision.transforms.Compose([
-    HistogramNormalize(),
-    torchvision.transforms.Grayscale(num_output_channels=3),
-    torchvision.transforms.RandomResizedCrop(size=input_size, scale=(0.2, 1.0)),
-    torchvision.transforms.RandomHorizontalFlip(p=0.5),
-    torchvision.transforms.RandomVerticalFlip(p=0.5),
-    torchvision.transforms.GaussianBlur(21),
-    torchvision.transforms.ToTensor(),
-    GaussianNoise(),
-])
-
+# Create a multiview transform that returns two different augmentations of each image.
+transform = MultiViewTransform(transforms=[view_transform, view_transform])
 
 # %%
 # Let's take a look at what our augmentation pipeline does to an image!
-# We plot the original image on the left and two random augmentations on the 
+# We plot the original image on the left and two random augmentations on the
 # right.
 
-example_image_name = '55e8e3db7309febee415515d06418171.tiff'
+example_image_name = "55e8e3db7309febee415515d06418171.tiff"
 example_image_path = os.path.join(path_to_data, example_image_name)
 example_image = np.array(Image.open(example_image_path))
 
-# torch transform returns a 3 x W x H image, we only show one color channel
-augmented_image_1 = transform(example_image).numpy()[0]
-augmented_image_2 = transform(example_image).numpy()[0]
+# Torch transform returns a 3 x W x H image, we only show one color channel.
+augmented_image_1 = view_transform(example_image).numpy()[0]
+augmented_image_2 = view_transform(example_image).numpy()[0]
 
 fig, axs = plt.subplots(1, 3)
 
 axs[0].imshow(example_image)
 axs[0].set_axis_off()
-axs[0].set_title('Original Image')
+axs[0].set_title("Original Image")
 
 axs[1].imshow(augmented_image_1)
 axs[1].set_axis_off()
@@ -179,20 +197,14 @@ axs[1].set_axis_off()
 axs[2].imshow(augmented_image_2)
 axs[2].set_axis_off()
 
-# %%
-# Finally, in order to use the augmentation pipeline we defined for self-supervised
-# learning, we need to create a lightly collate function like so:
-
-# create a collate function which performs the random augmentations
-collate_fn = lightly.data.BaseCollateFunction(transform)
 
 # %%
 # Setup dataset and dataloader
 # ------------------------------
 #
-# We create a dataset which points to the images in the input directory. Since
-# the input images are 16 bits deep, we need to overwrite the image loader such 
-# that it doesn't convert the images to RGB (and hence to 8-bit) automatically.
+# We create a dataset which loads the images in the input directory. Since the
+# input images are 16 bits deep, we need to overwrite the image loader such that
+# it doesn't convert the images to RGB (and hence to 8-bit) automatically.
 #
 # .. note:: The `LightlyDataset` uses a torchvision dataset underneath, which in turn uses
 #   an image loader which transforms the input image to an 8-bit RGB image. If a 16-bit
@@ -201,50 +213,32 @@ collate_fn = lightly.data.BaseCollateFunction(transform)
 
 
 def tiff_loader(f):
-    """Loads a 16-bit tiff image and returns it as a numpy array.
-
-    """
-    with open(f, 'rb') as f:
+    """Loads a 16-bit tiff image and returns it as a numpy array."""
+    with open(f, "rb") as f:
         image = Image.open(f)
         return np.array(image)
 
-# create the dataset and overwrite the image loader
-dataset_train = lightly.data.LightlyDataset(input_dir=path_to_data)
+
+# Create the dataset with the custom transform and overwrite the image loader.
+dataset_train = LightlyDataset(input_dir=path_to_data, transform=transform)
 dataset_train.dataset.loader = tiff_loader
 
-# setup the dataloader for training, make sure to pass the collate function
-# from above as an argument
+# Setup the dataloader for training.
 dataloader_train = torch.utils.data.DataLoader(
     dataset_train,
     batch_size=batch_size,
     shuffle=True,
-    collate_fn=collate_fn,
     drop_last=True,
-    num_workers=num_workers
+    num_workers=num_workers,
 )
 
 # %%
 # Create the MoCo model
 # -----------------------
-# We can chop off the linear classification head of a ResNet to get a backbone 
-# neural network.
-
-# remove the classification head and get the ResNet backbone
-resnet = lightly.models.ResNetGenerator('resnet-18')
-backbone = nn.Sequential(
-    *list(resnet.children())[:-1],
-    nn.AdaptiveAvgPool2d(1)
-)
-
-# %%
-# Now, we can use the backbone to create the MoCo model. It's important, that
-# the number of features matches the output dimension of the backbone.
-model = lightly.models.MoCo(backbone, num_ftrs=512, m=0.99)
-
-# %%
-# Setup criterion and optimizer
-# -----------------------------
-# For the criterion, we use the NTXentLoss which should always be used with MoCo.
+# Using the building blocks provided by lightly we can write our MoCo model.
+# We implement it as a PyTorch Lightning module. For the criterion, we use
+# the NTXentLoss which should always be used with MoCo.
+#
 # MoCo also requires a memory bank - we set its size to 4096 which is approximately
 # the size of the input dataset. The temperature parameter of the loss is set to 0.1.
 # This smoothens the cross entropy term in the loss function.
@@ -252,34 +246,78 @@ model = lightly.models.MoCo(backbone, num_ftrs=512, m=0.99)
 # The choice of the optimizer is left to the user. Here, we go with simple stochastic
 # gradient descent with momentum.
 
-criterion = lightly.loss.NTXentLoss(
-    temperature=0.1,
-    memory_bank_size=4096,
-)
 
-# use the same options as in the aforementioned paper
-optimizer = torch.optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=1e-4)
+class MoCoModel(pl.LightningModule):
+    def __init__(self):
+        super().__init__()
+
+        # Create a ResNet backbone and remove the classification head.
+        resnet = torchvision.models.resnet18()
+        self.backbone = nn.Sequential(
+            *list(resnet.children())[:-1],
+        )
+
+        # The backbone has output dimension 512 which also defines the size of
+        # the hidden dimension. We select 128 for the output dimension.
+        self.projection_head = MoCoProjectionHead(512, 512, 128)
+
+        # Add the momentum network.
+        self.backbone_momentum = copy.deepcopy(self.backbone)
+        self.projection_head_momentum = copy.deepcopy(self.projection_head)
+        deactivate_requires_grad(self.backbone_momentum)
+        deactivate_requires_grad(self.projection_head_momentum)
+
+        # Create the loss function with memory bank.
+        self.criterion = NTXentLoss(temperature=0.1, memory_bank_size=(4096, 128))
+
+    def training_step(self, batch, batch_idx):
+        (x_q, x_k), _, _ = batch
+
+        # Momentum update
+        update_momentum(self.backbone, self.backbone_momentum, 0.99)
+        update_momentum(self.projection_head, self.projection_head_momentum, 0.99)
+
+        # Get the queries.
+        q = self.backbone(x_q).flatten(start_dim=1)
+        q = self.projection_head(q)
+
+        # Get the keys.
+        k, shuffle = batch_shuffle(x_k)
+        k = self.backbone_momentum(k).flatten(start_dim=1)
+        k = self.projection_head_momentum(k)
+        k = batch_unshuffle(k, shuffle)
+
+        loss = self.criterion(q, k)
+        self.log("train_loss_ssl", loss)
+        return loss
+
+    def configure_optimizers(self):
+        # Use SGD optimizer with momentum and weight decay.
+        optim = torch.optim.SGD(
+            self.parameters(),
+            lr=0.1,
+            momentum=0.9,
+            weight_decay=1e-4,
+        )
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optim, max_epochs)
+        return [optim], [scheduler]
 
 
 # %%
 # Train MoCo with custom augmentations
 # -------------------------------------
-# Let's put all the puzzle pieces together and combine them in an encoder object.
-# Training the self-supervised model is now very easy. Simply call the function
-# `train_embedding` with the desired arguments.
+# Training the self-supervised model is now very easy. We can create a new
+# MoCoModel instance and pass it to the PyTorch Lightning trainer.
 
-encoder = lightly.embedding.SelfSupervisedEmbedding(
-    model,
-    criterion,
-    optimizer,
-    dataloader_train,
+model = MoCoModel()
+
+trainer = pl.Trainer(
+    max_epochs=max_epochs,
+    devices=1,
+    accelerator="gpu",
+    precision=16,
 )
-
-gpus = 1 if torch.cuda.is_available() else 0
-encoder.train_embedding(gpus=gpus,
-                        progress_bar_refresh_rate=100,
-                        max_epochs=max_epochs,
-                        precision=16)
+trainer.fit(model, dataloader_train)
 
 
 # %%
@@ -295,33 +333,46 @@ encoder.train_embedding(gpus=gpus,
 
 # test transforms differ from training transforms as they do not introduce
 # additional noise
-test_transforms = torchvision.transforms.Compose([
-    HistogramNormalize(),
-    torchvision.transforms.Grayscale(num_output_channels=3),
-    torchvision.transforms.Resize(input_size),
-    torchvision.transforms.ToTensor(),
-])
-
-# create the dataset and overwrite the image loader as before
-dataset_test = lightly.data.LightlyDataset(
-    input_dir=path_to_data,
-    transform=test_transforms
+test_transforms = torchvision.transforms.Compose(
+    [
+        HistogramNormalize(),
+        torchvision.transforms.Grayscale(num_output_channels=3),
+        torchvision.transforms.Resize(input_size),
+        torchvision.transforms.ToTensor(),
+    ]
 )
+
+# Create the dataset and overwrite the image loader as before.
+dataset_test = LightlyDataset(input_dir=path_to_data, transform=test_transforms)
 dataset_test.dataset.loader = tiff_loader
 
-# create the test dataloader
+# Create the test dataloader.
 dataloader_test = torch.utils.data.DataLoader(
-    dataset_test,
-    batch_size=1,
-    shuffle=False,
-    drop_last=False,
-    num_workers=num_workers
+    dataset_test, batch_size=1, shuffle=False, drop_last=False, num_workers=num_workers
 )
 
-# get vector representations for all images in the dataset
-encoder.to('cuda')
-embeddings, _, fnames = encoder.embed(dataloader_test, device='cuda')
-embeddings = normalize(embeddings)
+
+# Next, we add a small helper function to generate embeddings of our images
+def generate_embeddings(model, dataloader):
+    """Generates representations for all images in the dataloader"""
+
+    embeddings = []
+    filenames = []
+    with torch.no_grad():
+        for img, label, fnames in dataloader:
+            img = img.to(model.device)
+            emb = model.backbone(img).flatten(start_dim=1)
+            embeddings.append(emb)
+            filenames.extend(fnames)
+
+    embeddings = torch.cat(embeddings, 0)
+    embeddings = normalize(embeddings)
+    return embeddings, filenames
+
+
+# Generate the embeddings (remember to put the model in eval mode).
+model.eval()
+embeddings, fnames = generate_embeddings(model, dataloader_test)
 
 # %%
 # Now, we can use the embeddings to search for nearest neighbors.
@@ -330,55 +381,55 @@ embeddings = normalize(embeddings)
 # Then, we plot the critical findings in the example image (dark blue) and the distribution
 # of the critical findings in the nearest neighbor images (light blue) as bar plots.
 
+# Transform the original bounding box annotations to multiclass labels.
+fnames = [fname.split(".")[0] for fname in fnames]
 
-# transform the original bounding box annotations to multiclass labels
-fnames = [fname.split('.')[0] for fname in fnames]
-
-df = pandas.read_csv('/datasets/vinbigdata/train.csv')
+df = pandas.read_csv("/datasets/vinbigdata/train.csv")
 classes = list(np.unique(df.class_name))
 filenames = list(np.unique(df.image_id))
 
-# iterate over all bounding boxes and add a one-hot label if an image contains
-# a bounding box of a given class, after that, the array "multilabels" will 
-# contain a row for every image in the input dataset and each row of the 
-# array contains a one-hot vector of critical findings for this image
+# Iterate over all bounding boxes and add a one-hot label if an image contains
+# a bounding box of a given class, after that, the array "multilabels" will
+# contain a row for every image in the input dataset and each row of the
+# array contains a one-hot vector of critical findings for this image.
 multilabels = np.zeros((len(dataset_test.get_filenames()), len(classes)))
 for filename, label in zip(df.image_id, df.class_name):
     try:
-        i = fnames.index(filename.split('.')[0])
+        i = fnames.index(filename.split(".")[0])
         j = classes.index(label)
-        multilabels[i, j] = 1.
+        multilabels[i, j] = 1.0
     except Exception:
         pass
 
 
-def plot_knn_multilabels(embeddings, multilabels, samples_idx, n_neighbors=50):
-    """Plots multiple rows of random images with their nearest neighbors
-    """
-    # lets look at the nearest neighbors for some samples
-    # we use the sklearn library
+def plot_knn_multilabels(
+    embeddings, multilabels, samples_idx, filenames, n_neighbors=50
+):
+    """Plots multiple rows of random images with their nearest neighbors"""
+    # Let0s look at the nearest neighbors for some samples using the sklearn library.
     nbrs = NearestNeighbors(n_neighbors=n_neighbors).fit(embeddings)
     _, indices = nbrs.kneighbors(embeddings)
 
-    # position the bars
+    # Position the bars.
     bar_width = 0.4
     r1 = np.arange(multilabels.shape[1])
     r2 = r1 + bar_width
 
-    # loop through our randomly picked samples
+    # Loop through our randomly picked samples.
     for idx in samples_idx:
         fig = plt.figure()
-    
+
         bars1 = multilabels[idx]
         bars2 = np.mean(multilabels[indices[idx]], axis=0)
 
-        plt.bar(r1, bars1, color='steelblue', edgecolor='black', width=bar_width)
-        plt.bar(r2, bars2, color='lightsteelblue', edgecolor='black', width=bar_width)
+        plt.title(filenames[idx])
+        plt.bar(r1, bars1, color="steelblue", edgecolor="black", width=bar_width)
+        plt.bar(r2, bars2, color="lightsteelblue", edgecolor="black", width=bar_width)
         plt.xticks(0.5 * (r1 + r2), classes, rotation=90)
         plt.tight_layout()
 
 
-# plot the distribution of the multilabels of the k nearest neighbors of 
-# the three example images at index 4111, 3340, 1796
+# Plot the distribution of the multilabels of the k nearest neighbors of
+# the three example images at indices 4111, 3340, and 1796.
 k = 20
-plot_knn_multilabels(embeddings, multilabels, [4111, 3340, 1796], n_neighbors=k)
+plot_knn_multilabels(embeddings, multilabels, [4111, 3340, 1796], fnames, n_neighbors=k)

@@ -3,24 +3,12 @@
 # Copyright (c) 2020. Lightly AG and its affiliates.
 # All Rights Reserved
 
+import warnings
+
 import torch
 import torch.nn as nn
 
-
-def _get_simclr_projection_head(num_ftrs: int, out_dim: int):
-    """Returns a 2-layer projection head.
-
-    Reference (07.12.2020):
-    https://github.com/google-research/simclr/blob/master/model_util.py#L141
-
-    """
-    modules = [
-        nn.Linear(num_ftrs, num_ftrs),
-        #nn.BatchNorm1d(num_ftrs),
-        nn.ReLU(),
-        nn.Linear(num_ftrs, out_dim)
-    ]
-    return nn.Sequential(*modules)
+from lightly.models.modules import SimCLRProjectionHead
 
 
 class SimCLR(nn.Module):
@@ -40,20 +28,26 @@ class SimCLR(nn.Module):
 
     """
 
-    def __init__(self,
-                 backbone: nn.Module,
-                 num_ftrs: int = 32,
-                 out_dim: int = 128):
-
+    def __init__(self, backbone: nn.Module, num_ftrs: int = 32, out_dim: int = 128):
         super(SimCLR, self).__init__()
 
         self.backbone = backbone
-        self.projection_head = _get_simclr_projection_head(num_ftrs, out_dim)
+        self.projection_head = SimCLRProjectionHead(
+            num_ftrs, num_ftrs, out_dim, batch_norm=False
+        )
 
-    def forward(self,
-                x0: torch.Tensor,
-                x1: torch.Tensor = None,
-                return_features: bool = False):
+        warnings.warn(
+            Warning(
+                "The high-level building block SimCLR will be deprecated in version 1.3.0. "
+                + "Use low-level building blocks instead. "
+                + "See https://docs.lightly.ai/self-supervised-learning/lightly.models.html for more information"
+            ),
+            DeprecationWarning,
+        )
+
+    def forward(
+        self, x0: torch.Tensor, x1: torch.Tensor = None, return_features: bool = False
+    ):
         """Embeds and projects the input images.
 
         Extracts features with the backbone and applies the projection
@@ -77,8 +71,8 @@ class SimCLR(nn.Module):
 
         Examples:
             >>> # single input, single output
-            >>> out = model(x) 
-            >>> 
+            >>> out = model(x)
+            >>>
             >>> # single input with return_features=True
             >>> out, f = model(x, return_features=True)
             >>>
@@ -89,9 +83,9 @@ class SimCLR(nn.Module):
             >>> (out0, f0), (out1, f1) = model(x0, x1, return_features=True)
 
         """
-        
+
         # forward pass of first input x0
-        f0 = self.backbone(x0).squeeze()
+        f0 = self.backbone(x0).flatten(start_dim=1)
         out0 = self.projection_head(f0)
 
         # append features if requested
@@ -103,7 +97,7 @@ class SimCLR(nn.Module):
             return out0
 
         # forward pass of second input x1
-        f1 = self.backbone(x1).squeeze()
+        f1 = self.backbone(x1).flatten(start_dim=1)
         out1 = self.projection_head(f1)
 
         # append features if requested

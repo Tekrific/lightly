@@ -3,19 +3,12 @@ lightly.api
 
 .. automodule:: lightly.api
 
-.api_workflow_client
----------------------
 .. automodule:: lightly.api.api_workflow_client
    :members:
+   :inherited-members:
 
-.download
----------------
-.. automodule:: lightly.api.download
+.. autoclass:: lightly.api.api_workflow_compute_worker.ComputeWorkerRunInfo
    :members:
 
-.utils
----------------
-.. automodule:: lightly.api.utils
+.. autoclass:: lightly.api.api_workflow_compute_worker.InvalidConfigurationError
    :members:
-
-

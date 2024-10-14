@@ -68,15 +68,15 @@ Follow these steps to start contributing:
 2. Clone your fork to your local disk, and add the base repository as a remote:
 
    ```bash
-   $ git clone git@github.com:lightly-ai/lightly.git
-   $ cd lightly
-   $ git remote add upstream https://github.com/lightly-ai/lightly.git
+   git clone git@github.com:lightly-ai/lightly.git
+   cd lightly
+   git remote add upstream https://github.com/lightly-ai/lightly.git
    ```
 
 3. Create a new branch to hold your development changes:
 
    ```bash
-   $ git checkout -b a_descriptive_name_for_my_changes
+   git checkout -b a_descriptive_name_for_my_changes
    ```
 
    **do not** work on the `master` branch.
@@ -84,31 +84,69 @@ Follow these steps to start contributing:
 4. Set up a development environment by running the following command in a virtual environment:
 
    ```bash
-   $ pip install -e ".[dev]"
+   pip install -e ".[dev]"
    ```
 
-5. Develop the features on your branch.
-
-   As you work on the features, you should make sure that the test suite
-   passes:
+   If you are using [uv](https://github.com/astral-sh/uv) instead of pip, you can use
+   the following command:
 
    ```bash
-   $ make test
+   make install-dev
    ```
+
+5. **(Optional)** Install pre-commit hooks:
+
+   ```bash
+   pip install pre-commit
+   pre-commit install
+   ```
+
+   We use pre-commit hooks to identify simple issues before submission to code review. In particular, our hooks currently check for:
+   * Private keys in the commit
+   * Large files in the commit (>500kB)
+   * Run formatting checks using `black`, `isort` and `mypy`.
+   * Units which don't pass their unit tests (on push only)
+
+   You can verify that the hooks were installed correctly with
+   ```
+   pre-commit run --all-files
+   ```
+   The output should look like this:
+   ```
+   pre-commit run --all-files
+   Detect Private Key................................Passed
+   Check for added large files.......................Passed
+   black.............................................Passed
+   isort.............................................Passed
+   mypy..............................................Passed
+   ```
+
+6. Develop the features on your branch.
+
+   As you work on the features, you should make sure that the code is formatted and the
+   test suite passes:
+
+   ```bash
+   make format
+   make all-checks
+   ```
+
+   If you get an error from isort or black, please run `make format` again before
+   running `make all-checks`.
 
    If you're modifying documents under `docs/source`, make sure to validate that
    they can still be built. This check also runs in CI. 
 
    ```bash
-   $ cd docs
-   $ make html
+   cd docs
+   make html
    ```
    Once you're happy with your changes, add changed files using `git add` and
    make a commit with `git commit` to record your changes locally:
 
    ```bash
-   $ git add modified_file.py
-   $ git commit
+   git add modified_file.py
+   git commit
    ```
 
    Please write [good commit messages](https://chris.beams.io/posts/git-commit/).
@@ -117,23 +155,28 @@ Follow these steps to start contributing:
    repository regularly. This way you can quickly account for changes:
 
    ```bash
-   $ git fetch upstream
-   $ git rebase upstream/develop
+   git fetch upstream
+   git rebase upstream/develop
    ```
 
    Push the changes to your account using:
 
    ```bash
-   $ git push -u origin a_descriptive_name_for_my_changes
+   git push -u origin a_descriptive_name_for_my_changes
    ```
 
-6. Once you are satisfied, go to the webpage of your fork on GitHub.
+7. Once you are satisfied, go to the webpage of your fork on GitHub.
    Click on 'Pull request' to send your changes to the project maintainers for review.
 
-7. It's ok if maintainers ask you for changes. It happens to core contributors
+8. It's ok if maintainers ask you for changes. It happens to core contributors
    too! So everyone can see the changes in the Pull request, work in your local
    branch and push the changes to your fork. They will automatically appear in
    the pull request.
+
+9. We have a extensive Continuous Integration system that runs tests on all Pull Requests. This
+   is to make sure that the changes introduced by the commits don’t introduce errors. When
+   all CI tests in a workflow pass, it implies that the changes introduced by a commit do not introduce any errors.
+   We have workflows that check unit tests, dependencies, and formatting.
 
 ### Style guide
 
